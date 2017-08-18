@@ -1,0 +1,7 @@
+{
+    "description": "nrfutil",
+    "name": "tool-nrfutil",
+    "system": "*",
+    "url": "https://www.nordicsemi.com",
+    "version": "3.2.1"
+}
