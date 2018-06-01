@@ -42,6 +42,8 @@ This will also retrieve and install all additional required packages.
 
 **Note**: Please refer to the [pc-ble-driver-py PyPI installation note on Windows](https://github.com/NordicSemiconductor/pc-ble-driver-py#installing-from-pypi) if you are running nrfutil on this operating system.
 
+**Note**: When installing on macOS, you may need to add ` --ignore-installed six` when running pip. See [issue #79](https://github.com/NordicSemiconductor/pc-nrfutil/issues/79).
+
 **Note**: To use the `dfu ble` or `dfu thread` option you will need to set up your boards to be able to communicate with your computer.  You can find additional information here: [Hardware setup](https://github.com/NordicSemiconductor/pc-ble-driver/blob/master/Installation.md#hardware-setup).
 
 ## Downloading precompiled Windows executable
@@ -100,7 +102,7 @@ pyinstaller /full/path/to/nrfutil.spec
 
 **Note**: Please refer to the [pc-ble-driver-py PyPI installation note on Windows](https://github.com/NordicSemiconductor/pc-ble-driver-py#installing-from-pypi) if you are running nrfutil on this operating system.
 
-**Note**: To use the `dfu ble` or `dfu thread` option you will need to set up your boards to be able to communicate with your computer.  You can find additional information here: [Hardware setup](https://github.com/NordicSemiconductor/pc-ble-driver/blob/master/Installation.md#hardware-setup). 
+**Note**: To use the `dfu ble` or `dfu thread` option you will need to set up your boards to be able to communicate with your computer.  You can find additional information here: [Hardware setup](https://github.com/NordicSemiconductor/pc-ble-driver/blob/master/Installation.md#hardware-setup).
 
 ## Usage
 
@@ -134,6 +136,7 @@ The following table lists the FWIDs which are used to identify the SoftDevice ve
 
 SoftDevice            | FWID (sd-req)
 ----------------------| -------------
+`s112_nrf51_6.0.0`    | 0xA7
 `s130_nrf51_1.0.0`    | 0x67
 `s130_nrf51_2.0.0`    | 0x80
 `s132_nrf52_2.0.0`    | 0x81
@@ -145,7 +148,11 @@ SoftDevice            | FWID (sd-req)
 `s132_nrf52_4.0.2`    | 0x98
 `s132_nrf52_4.0.3`    | 0x99
 `s132_nrf52_4.0.4`    | 0x9E
+`s132_nrf52_4.0.5`    | 0x9F
 `s132_nrf52_5.0.0`    | 0x9D
+`s132_nrf52_5.1.0`    | 0xA5
+`s132_nrf52_6.0.0`    | 0xA8
+`s140_nrf52_6.0.0`    | 0xA9
 
 **Note**: The Thread stack doesn't use a SoftDevice but --sd-req option is required for compatibility reasons. You can provide any value for the option as it is ignored during DFU.
 
@@ -169,7 +176,7 @@ SD + APP      | Yes       | **See notes 1 and 2 below**
 
 **Note 1:** SD must be of the same Major Version as the old BL may not be compatible with the new SD.
 
-**Note 2:** When updating SD (+ BL) + APP the update is done in 2 following connections, unless a custom bootloader is used. First the SD (+ BL) is updated, then the bootloader will disconnect and the (new) BL will start advertising. Second connection to the bootloader will update the APP. However, the two SDs may have different IDs. The first update requires `--sd-req` to be set to the ID of the old SD. Update of the APP requires the ID of the new SD. In that case the new ID must be set using `--sd-id` parameter. This parameter is 
+**Note 2:** When updating SD (+ BL) + APP the update is done in 2 following connections, unless a custom bootloader is used. First the SD (+ BL) is updated, then the bootloader will disconnect and the (new) BL will start advertising. Second connection to the bootloader will update the APP. However, the two SDs may have different IDs. The first update requires `--sd-req` to be set to the ID of the old SD. Update of the APP requires the ID of the new SD. In that case the new ID must be set using `--sd-id` parameter. This parameter is
 was added in nrfutil 3.1.0 and is required since 3.2.0 in case the package should contain SD (+ BL) + APP. Also, since version 3.2.0 the new ID is copied to `--sd-req` list so that
 in case of a link loss during APP update the DFU process can be restarted. In that case the new SD would overwrite itself, so `--sd-req` must contain also the ID of the new SD.
 
@@ -181,6 +188,8 @@ nrfutil pkg display package.zip
 
 #### dfu
 This set of commands allow you to perform an actual firmware update over a serial, BLE, or Thread connection.
+
+**Note**: When using Homebrew Python on macOS, you may encounter an error: `Fatal Python error: PyThreadState_Get: no current thread Abort trap: 6`. See [issue #46](https://github.com/NordicSemiconductor/pc-nrfutil/issues/46#issuecomment-383930818).
 
 ##### ble
 Perform a full DFU procedure over a BLE connection. This command takes several options that you can list using:
@@ -207,13 +216,41 @@ nrfutil dfu ble -pkg app_dfu_package.zip -p COM3 -f
 The `-f` option instructs nrfutil to actually program the board connected to COM3 with the connectivity software required to operate as a network co-processor (NCP). Use with caution as this will overwrite the contents of the IC's flash memory.
 
 ##### serial
-Perform a full DFU procedure over a serial (UART) line. This command takes several options that you can list using:
+
+Perform a full DFU procedure over a UART serial line. The DFU target shall be configured to use some of its digital I/O pins as UART.
+
+Please note that most Nordic development kit boards have an [interface MCU](http://infocenter.nordicsemi.com/index.jsp?topic=%2Fcom.nordic.infocenter.nrf52%2Fdita%2Fnrf52%2Fdevelopment%2Fnrf52_dev_kit%2Finterf_mcu.html&cp=2_1_4_4)
+which transparently [maps digital pins 6 and 8 into a CDC ACM USB interface (A.K.A. "USB virtual serial port")](http://infocenter.nordicsemi.com/index.jsp?topic=%2Fcom.nordic.infocenter.nrf52%2Fdita%2Fnrf52%2Fdevelopment%2Fnrf52_dev_kit%2Fvir_com_port.html&cp=2_1_4_4_1).
+Use `serial` DFU mode when communicating with a nRF chip in this way. Otherwise you may
+connect the digital I/O pins to an RS232 connector.
+
+This command takes several options that you can list using:
+
 ```
 nrfutil dfu serial --help
 ```
+
 Below is an example of the execution of a DFU procedure of the file generated above over COM3:
+
 ```
 nrfutil dfu serial -pkg app_dfu_package.zip -p COM3
+```
+
+##### usb_serial
+
+Perform a full DFU procedure over a CDC ACM USB connection (A.K.A. "USB virtual serial port"). The DFU target shall be a chip with USB pins (i.e. nRF52840), and shall be running a bootloader enabling a USB-CDC interface.
+
+In the case of the nRF52840 development kit board, the `usb_serial` DFU mode is used when communicating with the board through the female USB port marked "nRF USB", which is wired
+to the USB pins in the nRF chip.
+
+```
+nrfutil dfu usb_serial --help
+```
+
+Below is an example of the execution of a DFU procedure of the file generated above over COM3:
+
+```
+nrfutil dfu usb_serial -pkg app_dfu_package.zip -p COM3
 ```
 
 #### keys
@@ -255,6 +292,8 @@ nRF IC    | Family Setting
 --------- | --------------
 nRF51xxx  | NRF51
 nRF52832  | NRF52
+nRF52832-QFAB | NRF52QFAB
+nRF52810  | NRF52810
 nRF52840  | NRF52840
 
 The `--bl-settings-version` depends on the SDK version used. Check the following table to find out which version to use:
@@ -313,4 +352,3 @@ Refer to [init_packet_pb.py](nordicsemi/dfu/init_packet_pb.py) and [package.py](
 ### Adapting the bootloader to the new Init Packet format
 
 Since you have modified the Init Packet format you will have to do the same with the embedded bootloader, which can be found in the Nordic nRF5 SDK under `examples/dfu/bootloader_secure`.
-

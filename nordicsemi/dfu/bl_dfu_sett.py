@@ -73,11 +73,13 @@ class BLDFUSettingsStructV1(object):
 class BLDFUSettings(object):
     """ Class to abstract a bootloader and its settings """
 
-    flash_page_51_sz = 0x400
-    flash_page_52_sz = 0x1000
-    bl_sett_51_addr= 0x0003FC00
-    bl_sett_52_addr= 0x0007F000
-    bl_sett_52840_addr= 0x000FF000
+    flash_page_51_sz     = 0x400
+    flash_page_52_sz     = 0x1000
+    bl_sett_51_addr      = 0x0003FC00
+    bl_sett_52_addr      = 0x0007F000
+    bl_sett_52_qfab_addr = 0x0003F000
+    bl_sett_52810_addr   = 0x0002F000
+    bl_sett_52840_addr   = 0x000FF000
 
 
     def __init__(self, ):
@@ -100,30 +102,55 @@ class BLDFUSettings(object):
         if arch == 'NRF51':
             self.arch = nRFArch.NRF51
             self.arch_str = 'nRF51'
-            self.flash_page_sz = BLDFUSettings.flash_page_51_sz 
+            self.flash_page_sz = BLDFUSettings.flash_page_51_sz
             self.bl_sett_addr = BLDFUSettings.bl_sett_51_addr
         elif arch == 'NRF52':
             self.arch = nRFArch.NRF52
             self.arch_str = 'nRF52'
-            self.flash_page_sz = BLDFUSettings.flash_page_52_sz 
+            self.flash_page_sz = BLDFUSettings.flash_page_52_sz
             self.bl_sett_addr = BLDFUSettings.bl_sett_52_addr
+        elif arch == 'NRF52QFAB':
+            self.arch = nRFArch.NRF52
+            self.arch_str = 'nRF52QFAB'
+            self.flash_page_sz = BLDFUSettings.flash_page_52_sz
+            self.bl_sett_addr = BLDFUSettings.bl_sett_52_qfab_addr
+        elif arch == 'NRF52810':
+            self.arch = nRFArch.NRF52
+            self.arch_str = 'NRF52810'
+            self.flash_page_sz = BLDFUSettings.flash_page_52_sz
+            self.bl_sett_addr = BLDFUSettings.bl_sett_52810_addr
         elif arch == 'NRF52840':
             self.arch = nRFArch.NRF52840
             self.arch_str = 'NRF52840'
-            self.flash_page_sz = BLDFUSettings.flash_page_52_sz 
+            self.flash_page_sz = BLDFUSettings.flash_page_52_sz
             self.bl_sett_addr = BLDFUSettings.bl_sett_52840_addr
         else:
             raise RuntimeError("Unknown architecture")
 
-    def generate(self, arch, app_file, app_ver, bl_ver, bl_sett_ver):
+    def generate(self, arch, app_file, app_ver, bl_ver, bl_sett_ver, custom_bl_sett_addr):
+        """
+        Populates the settings object based on the given parameters.
+
+        :param arch: Architecture family string, e.g. NRF51
+        :param app_file: Path to application file
+        :param app_ver: Application version number
+        :param bl_ver: Bootloader version number
+        :param bl_sett_ver: Bootloader settings version number
+        :param custom_bl_sett_addr: Custom start address for the settings page
+        :return:
+        """
+
         # Set the architecture
         self.set_arch(arch)
+
+        if custom_bl_sett_addr is not None:
+            self.bl_sett_addr = custom_bl_sett_addr
 
         if bl_sett_ver == 1:
             self.setts = BLDFUSettingsStructV1()
         else:
             raise NordicSemiException("Unknown bootloader settings version")
-        
+
         self.bl_sett_ver = bl_sett_ver & 0xffffffff
         self.bl_ver = bl_ver & 0xffffffff
 
@@ -140,9 +167,11 @@ class BLDFUSettings(object):
             # calculate application size and CRC32
             self.app_sz = int(Package.calculate_file_size(self.app_bin)) & 0xffffffff
             self.app_crc = int(Package.calculate_crc(32, self.app_bin)) & 0xffffffff
+            self.bank0_bank_code = 0x1 & 0xffffffff
         else:
             self.app_sz = 0x0 & 0xffffffff
             self.app_crc = 0x0 & 0xffffffff
+            self.bank0_bank_code = 0x0 & 0xffffffff
 
         # build the uint32_t array
         arr = [0x0] * self.setts.uint32_count
@@ -150,7 +179,6 @@ class BLDFUSettings(object):
         # additional harcoded values
         self.bank_layout = 0x0 & 0xffffffff
         self.bank_current = 0x0 & 0xffffffff
-        self.bank0_bank_code = 0x1 & 0xffffffff
 
         # fill in the settings
         arr[self.setts.offs_sett_ver] = self.bl_sett_ver
@@ -160,10 +188,10 @@ class BLDFUSettings(object):
         arr[self.setts.offs_bank_current] = self.bank_current
         arr[self.setts.offs_bank0_img_sz] = self.app_sz
         arr[self.setts.offs_bank0_img_crc] = self.app_crc
-        arr[self.setts.offs_bank0_bank_code] = self.bank0_bank_code 
+        arr[self.setts.offs_bank0_bank_code] = self.bank0_bank_code
 
         # calculate the CRC32 from the filled-in settings
-        crc_format_str = '<' + ('I' * (self.setts.uint32_count - 1)) 
+        crc_format_str = '<' + ('I' * (self.setts.uint32_count - 1))
         crc_arr = arr[1:]
         crc_data = struct.pack(crc_format_str, *crc_arr)
         self.crc = binascii.crc32(crc_data) & 0xffffffff
@@ -171,16 +199,16 @@ class BLDFUSettings(object):
         # fill in the calculated CRC32
         arr[self.setts.offs_crc] = self.crc
 
-        format_str = '<' + ('I' * self.setts.uint32_count) 
+        format_str = '<' + ('I' * self.setts.uint32_count)
 
         # Get the packed data to insert into the hex instance
         data = struct.pack(format_str, *arr)
-        
+
         # insert the data at the correct address
         self.ihex.puts(self.bl_sett_addr, data)
 
     def probe_settings(self, base):
-        
+
         # Unpack CRC and version
         fmt = '<I'
 
@@ -191,7 +219,7 @@ class BLDFUSettings(object):
             self.setts = BLDFUSettingsStructV1()
         else:
             raise RuntimeError("Unknown Bootloader DFU settings version: {0}".format(ver))
-        
+
         # calculate the CRC32 over the data
         crc_data = self.ihex.gets(base + 4, (self.setts.uint32_count - 1) * 4)
         _crc = binascii.crc32(crc_data) & 0xffffffff
@@ -201,9 +229,9 @@ class BLDFUSettings(object):
 
         self.crc = crc
 
-        fmt = '<' + ('I' * (self.setts.uint32_count)) 
+        fmt = '<' + ('I' * (self.setts.uint32_count))
         arr = struct.unpack(fmt, self.ihex.gets(base, (self.setts.uint32_count) * 4))
- 
+
         self.bl_sett_ver = arr[self.setts.offs_sett_ver] & 0xffffffff
         self.app_ver = arr[self.setts.offs_app_ver] & 0xffffffff
         self.bl_ver = arr[self.setts.offs_bl_ver] & 0xffffffff
@@ -212,14 +240,11 @@ class BLDFUSettings(object):
         self.app_sz = arr[self.setts.offs_bank0_img_sz] & 0xffffffff
         self.app_crc = arr[self.setts.offs_bank0_img_crc] & 0xffffffff
         self.bank0_bank_code = arr[self.setts.offs_bank0_bank_code] & 0xffffffff
-       
+
 
     def fromhexfile(self, f, arch=None):
         self.hex_file = f
         self.ihex.fromfile(f, format='hex')
-
-        # autodetect based on base address
-        base = self.ihex.minaddr()
 
         # check the 3 possible addresses for CRC matches
         try:
@@ -231,29 +256,40 @@ class BLDFUSettings(object):
                 self.set_arch('NRF52')
             except Exception as e:
                 try:
-                    self.probe_settings(BLDFUSettings.bl_sett_52840_addr)
-                    self.set_arch('NRF52840')
+                    self.probe_settings(BLDFUSettings.bl_sett_52_qfab_addr)
+                    self.set_arch('NRF52QFAB')
                 except Exception as e:
-                    raise NordicSemiException("Failed to parse .hex file: {0}".format(e))
-       
+                    try:
+                        self.probe_settings(BLDFUSettings.bl_sett_52810_addr)
+                        self.set_arch('NRF52810')
+                    except Exception as e:
+                        try:
+                            self.probe_settings(BLDFUSettings.bl_sett_52840_addr)
+                            self.set_arch('NRF52840')
+                        except Exception as e:
+                            raise NordicSemiException("Failed to parse .hex file: {0}".format(e))
+
+        self.bl_sett_addr = self.ihex.minaddr()
+
+
     def __str__(self):
         s = """
 Bootloader DFU Settings:
 * File:                 {0}
 * Family:               {1}
-* CRC:                  0x{2:08X}
-* Settings Version:     0x{3:08X} ({3})
-* App Version:          0x{4:08X} ({4})
-* Bootloader Version:   0x{5:08X} ({5})
-* Bank Layout:          0x{6:08X}
-* Current Bank:         0x{7:08X}
-* Application Size:     0x{8:08X} ({8} bytes)
-* Application CRC:      0x{9:08X}
-* Bank0 Bank Code:      0x{10:08X}
-""".format(self.hex_file, self.arch_str, self.crc, self.bl_sett_ver, self.app_ver, self.bl_ver, self.bank_layout, self.bank_current, self.app_sz, self.app_crc, self.bank0_bank_code)
+* Start Address:        0x{2:08X}
+* CRC:                  0x{3:08X}
+* Settings Version:     0x{4:08X} ({4})
+* App Version:          0x{5:08X} ({5})
+* Bootloader Version:   0x{6:08X} ({6})
+* Bank Layout:          0x{7:08X}
+* Current Bank:         0x{8:08X}
+* Application Size:     0x{9:08X} ({9} bytes)
+* Application CRC:      0x{10:08X}
+* Bank0 Bank Code:      0x{11:08X}
+""".format(self.hex_file, self.arch_str, self.bl_sett_addr, self.crc, self.bl_sett_ver, self.app_ver, self.bl_ver, self.bank_layout, self.bank_current, self.app_sz, self.app_crc, self.bank0_bank_code)
         return s
 
     def tohexfile(self, f):
         self.hex_file = f
         self.ihex.tofile(f, format='hex')
-
