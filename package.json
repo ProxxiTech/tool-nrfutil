@@ -3,5 +3,5 @@
     "name": "tool-nrfutil",
     "system": "*",
     "url": "https://www.nordicsemi.com",
-    "version": "3.5.1"
+    "version": "4.0.0"
 }
